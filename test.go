@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	sql := "select * from users as a"
+	sql := "select * from users as a where id = 1"
 	stmt, err := sqlparser.Parse(sql)
 	if err != nil {
 		log.Fatal(err)
@@ -27,7 +27,7 @@ func main() {
 		stmt.SelectExprs.Format(buf)
 		fmt.Println(buf.String())
 
-		sqls := util.AliasedTableSQL(stmt.SelectExprs, stmt.From)
+		sqls := util.AliasedTableSQL(stmt)
 		for _, sql := range sqls {
 			fmt.Println(sql)
 		}
