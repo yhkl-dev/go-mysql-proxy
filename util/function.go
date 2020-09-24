@@ -24,11 +24,12 @@ func GetInt(expr Expr, defaultValue int) int {
 
 var config = conf.NewConfig()
 
-func ParseWhere(where *Where) string {
-	if where == nil {
+func ParseWhere(expr Expr) string {
+	if expr == nil {
 		return ""
 	}
-	ce := where.Expr.(*ComparisonExpr)
+
+	ce := expr.(*ComparisonExpr)
 
 	rule := config.Rule.(*conf.RangeRule)
 	column := rule.Column
@@ -40,15 +41,27 @@ func ParseWhere(where *Where) string {
 	return ""
 }
 
+func ParseMultiWhere(where *Where) string {
+	if where == nil {
+		return ""
+	}
+
+	retl := getNode(where.Expr, true)
+	if retl == "" {
+		return getNode(where.Expr, false)
+	}
+	return retl
+}
+
 func AliasedTableSQL(stmt *Select) []string {
 
 	config := conf.NewConfig()
+	node := ParseMultiWhere(stmt.Where)
 	sqls := make([]string, 0)
 
 	for _, tc := range stmt.From {
 		tableName := tc.(*AliasedTableExpr).Expr.(TableName).Name.String()
 		as := tc.(*AliasedTableExpr).As
-		node := ParseWhere(stmt.Where)
 		if mtables, ok := config.Models[tableName]; ok {
 			for _, mtable := range mtables {
 				if node != "" && node != mtable {
@@ -67,11 +80,23 @@ func forSQL(stmt *Select, mtable string, as TableIdent) string {
 	newSQL.SelectExprs = stmt.SelectExprs
 	newTe := &AliasedTableExpr{As: as, Expr: TableName{Name: NewTableIdent(mtable)}}
 	newSQL.From = append(newSQL.From, newTe)
-	ParseWhere(stmt.Where)
 	newSQL.Where = stmt.Where
 	newSQL.OrderBy = stmt.OrderBy
 	newSQL.Limit = stmt.Limit
 	buf := NewTrackedBuffer(nil)
 	newSQL.Format(buf)
 	return buf.String()
+}
+
+func getNode(expr Expr, isLeft bool) string {
+	if andExpr, ok := expr.(*AndExpr); ok {
+		if isLeft {
+			return getNode(andExpr.Left, isLeft)
+		}
+		return getNode(andExpr.Right, isLeft)
+	} else if cExpr, ok := expr.(*ComparisonExpr); ok {
+		return ParseWhere(cExpr)
+	} else {
+		return ""
+	}
 }
