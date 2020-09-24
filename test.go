@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	sql := "select * from users as a where id = 1"
+	sql := "select * from users as a where pname='avb'"
 	stmt, err := sqlparser.Parse(sql)
 	if err != nil {
 		log.Fatal(err)
