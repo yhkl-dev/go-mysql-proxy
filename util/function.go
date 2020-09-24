@@ -7,6 +7,8 @@ import (
 	"proxy.go/conf"
 )
 
+var operator = []interface{}{"=", "<", ">", "<=", ">="}
+
 func GetString(expr Expr) string {
 	buf := NewTrackedBuffer(nil)
 	expr.Format(buf)
@@ -24,33 +26,42 @@ func GetInt(expr Expr, defaultValue int) int {
 
 var config = conf.NewConfig()
 
-func ParseWhere(expr Expr) string {
+func ParseWhere(expr Expr) []interface{} {
 	if expr == nil {
-		return ""
+		return nil
 	}
 
 	ce := expr.(*ComparisonExpr)
-
 	rule := config.Rule.(*conf.RangeRule)
 	column := rule.Column
 	if GetString(ce.Left) == column {
-		node := rule.GetNode(GetInt(ce.Right, 0))
-
-		return node
+		if Contains(operator, ce.Operator) {
+			node := rule.GetNode(GetInt(ce.Right, 0), ce.Operator)
+			return node
+		}
 	}
-	return ""
+	return nil
 }
 
-func ParseMultiWhere(where *Where) string {
+func ParseMultiWhere(where *Where) []interface{} {
 	if where == nil {
-		return ""
+		return nil
 	}
 
-	retl := getNode(where.Expr, true)
-	if retl == "" {
-		return getNode(where.Expr, false)
+	exps := PaseWhereToSlice(where.Expr)
+
+	ret := make([]interface{}, 0)
+	for _, exp := range exps {
+		parseNode := ParseWhere(exp)
+		if parseNode == nil || len(parseNode) == 0 {
+			continue
+		}
+		if len(ret) == 0 {
+			ret = parseNode
+		}
+		ret = IntersectSlice(ret, parseNode)
 	}
-	return retl
+	return ret
 }
 
 func AliasedTableSQL(stmt *Select) []string {
@@ -64,7 +75,7 @@ func AliasedTableSQL(stmt *Select) []string {
 		as := tc.(*AliasedTableExpr).As
 		if mtables, ok := config.Models[tableName]; ok {
 			for _, mtable := range mtables {
-				if node != "" && node != mtable {
+				if node != nil && len(node) > 0 && !Contains(node, mtable) {
 					continue
 				}
 				sql := forSQL(stmt, mtable, as)
@@ -88,6 +99,7 @@ func forSQL(stmt *Select, mtable string, as TableIdent) string {
 	return buf.String()
 }
 
+/*
 func getNode(expr Expr, isLeft bool) string {
 	if andExpr, ok := expr.(*AndExpr); ok {
 		if isLeft {
@@ -99,4 +111,19 @@ func getNode(expr Expr, isLeft bool) string {
 	} else {
 		return ""
 	}
+}
+*/
+func PaseWhereToSlice(expr Expr) []Expr {
+	exprList := make([]Expr, 0)
+	temp := expr
+	for {
+		if andExpr, ok := temp.(*AndExpr); ok {
+			exprList = append(exprList, andExpr.Right)
+			temp = andExpr.Left
+		} else {
+			exprList = append(exprList, temp)
+			break
+		}
+	}
+	return exprList
 }
